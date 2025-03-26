@@ -13,9 +13,6 @@ const pool = new Pool({
 });
 
 // API-Route: Alle Fragen abrufen
-app.get('/', (req, res)=> {
-		res.send('backend läuft');
-});
 app.get('/questions', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM questions');
