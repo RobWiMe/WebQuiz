@@ -123,3 +123,48 @@ const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`🚀 Backend läuft auf Port ${PORT}`);
 });
+
+// === 9. HIGHSCORE SPEICHERN ===
+// FRONTEND: POST /highscores
+// Erwartet im Body: { user_id, score, mode }
+// Beispiel-Request:
+// { "user_id": 1, "score": 700, "mode": "solo" }
+app.post('/highscores', async (req, res) => {
+  const { user_id, score, mode } = req.body;
+
+  if (!user_id || !score || !mode) {
+    return res.status(400).json({ error: 'Fehlende Daten (user_id, score, mode)' });
+  }
+
+  try {
+    await pool.query(
+      'INSERT INTO highscores (user_id, score, mode) VALUES ($1, $2, $3)',
+      [user_id, score, mode]
+    );
+    res.status(201).json({ message: 'Highscore gespeichert' });
+  } catch (err) {
+    console.error('Fehler beim Speichern des Highscores:', err);
+    res.status(500).json({ error: 'Serverfehler beim Speichern des Highscores' });
+  }
+});
+
+// === 10. HIGHSCORES LADEN ===
+// FRONTEND: GET /highscores
+// Gibt eine Liste zurück (Top 10), inkl. Nutzer-E-Mail und Modus
+app.get('/highscores', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT h.score, h.mode, h.created_at, u.email AS user_email
+      FROM highscores h
+      LEFT JOIN users u ON h.user_id = u.id
+      ORDER BY h.score DESC, h.created_at ASC
+      LIMIT 10
+    `);
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Fehler beim Laden der Highscores:', err);
+    res.status(500).json({ error: 'Fehler beim Abrufen der Highscores' });
+  }
+});
+
