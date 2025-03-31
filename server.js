@@ -121,7 +121,7 @@ app.get('/categories', async (req, res) => {
 // === 8. SERVER STARTEN ===
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
-  console.log(`🚀 Backend läuft auf Port ${PORT}`);
+  console.log(`Backend läuft auf Port ${PORT}`);
 });
 
 // === 9. HIGHSCORE SPEICHERN ===
@@ -130,16 +130,17 @@ app.listen(PORT, () => {
 // Beispiel-Request:
 // { "user_id": 1, "score": 700, "mode": "solo" }
 app.post('/highscores', async (req, res) => {
-  const { user_id, score, mode } = req.body;
+  const { user_id, guest_name, score, mode } = req.body;
 
-  if (!user_id || !score || !mode) {
-    return res.status(400).json({ error: 'Fehlende Daten (user_id, score, mode)' });
+  // Prüfen, ob die erforderlichen Felder vorhanden sind
+  if (!score || !mode || (!user_id && !guest_name)) {
+    return res.status(400).json({ error: 'Fehlende Angaben: score, mode und entweder user_id oder guest_name' });
   }
 
   try {
     await pool.query(
-      'INSERT INTO highscores (user_id, score, mode) VALUES ($1, $2, $3)',
-      [user_id, score, mode]
+      'INSERT INTO highscores (user_id, guest_name, score, mode) VALUES ($1, $2, $3, $4)',
+      [user_id || null, guest_name || null, score, mode]
     );
     res.status(201).json({ message: 'Highscore gespeichert' });
   } catch (err) {
@@ -154,17 +155,20 @@ app.post('/highscores', async (req, res) => {
 app.get('/highscores', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT h.score, h.mode, h.created_at, u.email AS user_email
+      SELECT 
+        COALESCE(u.email, h.guest_name) AS name,
+        h.score,
+        h.mode,
+        h.created_at
       FROM highscores h
       LEFT JOIN users u ON h.user_id = u.id
       ORDER BY h.score DESC, h.created_at ASC
       LIMIT 10
     `);
-
     res.json(result.rows);
   } catch (err) {
     console.error('Fehler beim Laden der Highscores:', err);
-    res.status(500).json({ error: 'Fehler beim Abrufen der Highscores' });
+    res.status(500).json({ error: 'Serverfehler beim Abrufen der Highscores' });
   }
 });
 
