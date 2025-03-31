@@ -1,3 +1,8 @@
+
+# env
+.env
 backend.env 
+
+# node modules & lockfile
 node_modules/
 package-lock.json
