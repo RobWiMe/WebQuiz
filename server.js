@@ -172,3 +172,27 @@ app.get('/highscores', async (req, res) => {
   }
 });
 
+// Erklärung zur Frage anhand der Frage-ID abrufen
+app.get('/explanation/:question_id', async (req, res) => {
+  const questionId = req.params.question_id;
+
+  try {
+    const result = await pool.query(
+      'SELECT explanation FROM questions WHERE id = $1',
+      [questionId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Frage nicht gefunden' });
+    }
+
+    res.json({
+      question_id: questionId,
+      explanation: result.rows[0].explanation
+    });
+
+  } catch (err) {
+    console.error('Fehler beim Abrufen der Erklärung:', err);
+    res.status(500).json({ error: 'Serverfehler beim Abrufen der Erklärung' });
+  }
+});
