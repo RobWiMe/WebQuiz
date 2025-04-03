@@ -201,7 +201,7 @@ app.get('/explanation/:question_id', async (req, res) => {
 // Diese Frage wird NICHT direkt ins Quiz übernommen, sondern in die Tabelle 'submitted_questions' geschrieben
 // Sie wartet dort auf Freigabe durch einen Admin (oder euch als Projektteam)
 
-app.post('/submit-question', async (req, res) => {
+app.post('/submitted-questions', async (req, res) => {
   // Hole alle notwendigen Felder aus dem Anfrage-Body
   const {
     user_email,       // optional: falls eingeloggter Nutzer (kann auch null sein)
