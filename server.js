@@ -196,3 +196,57 @@ app.get('/explanation/:question_id', async (req, res) => {
     res.status(500).json({ error: 'Serverfehler beim Abrufen der Erklärung' });
   }
 });
+
+// === ROUTE: Nutzer kann neue Frage einreichen ===
+// Diese Frage wird NICHT direkt ins Quiz übernommen, sondern in die Tabelle 'submitted_questions' geschrieben
+// Sie wartet dort auf Freigabe durch einen Admin (oder euch als Projektteam)
+
+app.post('/submit-question', async (req, res) => {
+  // Hole alle notwendigen Felder aus dem Anfrage-Body
+  const {
+    user_email,       // optional: falls eingeloggter Nutzer (kann auch null sein)
+    category_id,      // ID der Kategorie, z. B. 1 = Aussagenlogik, 2 = Requirements etc.
+    question,         // Die eigentliche Frage
+    option_a,         // Antwortmöglichkeit A
+    option_b,         // Antwortmöglichkeit B
+    option_c,         // Antwortmöglichkeit C
+    option_d,         // Antwortmöglichkeit D
+    correct_option,   // Richtige Antwort (nur A, B, C oder D erlaubt)
+    explanation       // Erklärung zur richtigen Antwort (optional)
+  } = req.body;
+
+  // === VALIDIERUNG ===
+  // Überprüfe, ob alle Pflichtfelder ausgefüllt sind
+  if (!category_id || !question || !option_a || !option_b || !option_c || !option_d || !correct_option) {
+    return res.status(400).json({ error: 'Bitte alle Pflichtfelder ausfüllen.' });
+  }
+
+  try {
+    // === DATENBANKEINTRAG ===
+    // Speichere die eingereichte Frage in der Tabelle submitted_questions
+    await pool.query(
+      `INSERT INTO submitted_questions 
+       (user_email, category_id, question, option_a, option_b, option_c, option_d, correct_option, explanation)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        user_email || null,        // falls leer, NULL speichern
+        category_id,
+        question,
+        option_a,
+        option_b,
+        option_c,
+        option_d,
+        correct_option,
+        explanation || null        // falls leer, NULL speichern
+      ]
+    );
+
+    // === ERFOLGSNACHRICHT ===
+    res.status(201).json({ message: 'Frage wurde eingereicht und wartet auf Prüfung.' });
+
+  } catch (err) {
+    // === FEHLERBEHANDLUNG ===
+    console.error('Fehler beim Speichern der Einreichung:', err);
+    res.status(500).json({ error: 'Serverfehler beim Einreichen der Frage' });
+  }
+});
