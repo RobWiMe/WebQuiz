@@ -1,7 +1,5 @@
-// === SERVER.JS ===
-// Status: Registrierung, Login, Fragenabruf nach Kategorie, Kategorienliste
+// === SERVER.JS – WebQuiz Backend ===
 
-// === 1. GRUNDKONFIGURATION ===
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -9,26 +7,23 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
 
+// === GRUNDKONFIGURATION ===
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// === 2. POSTGRESQL EINRICHTEN ===
+// === POSTGRESQL EINRICHTUNG ===
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-// === 3. ROUTE: SERVER-CHECK ===
-// FRONTEND: Kann genutzt werden, um zu prüfen, ob das Backend läuft
+// === SERVER-CHECK ===
 app.get('/', (req, res) => {
   res.send('Webquiz Backend ist online');
 });
 
-// === 4. ROUTE: REGISTRIERUNG ===
-// FRONTEND: POST /register
-// Erwartet im Body: { email, password }
-// Gibt zurück: { user: { id, email } }
+// === REGISTRIERUNG ===
 app.post('/register', async (req, res) => {
   const { email, password } = req.body;
 
@@ -49,10 +44,7 @@ app.post('/register', async (req, res) => {
   }
 });
 
-// === 5. ROUTE: LOGIN ===
-// FRONTEND: POST /login
-// Erwartet im Body: { email, password }
-// Gibt zurück: { token } (wird im Frontend gespeichert)
+// === LOGIN ===
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
@@ -81,10 +73,7 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// === 6. ROUTE: FRAGEN ABRUFEN (NACH KATEGORIE) ===
-// FRONTEND: GET /questions?category=ID
-// Erwartet: query parameter category (z. B. category=2)
-// Gibt zurück: Array mit max. 10 zufälligen Fragen aus dieser Kategorie
+// === FRAGEN ABRUFEN (nach Kategorie) ===
 app.get('/questions', async (req, res) => {
   const category = req.query.category;
   if (!category) {
@@ -103,11 +92,7 @@ app.get('/questions', async (req, res) => {
   }
 });
 
-// === 7. ROUTE: KATEGORIEN ABRUFEN ===
-// FRONTEND: GET /categories
-// Erwartet keine Parameter
-// Gibt zurück: Array mit allen verfügbaren Kategorien (id + name)
-// Beispiel: [ { id: 1, name: "Programmierung" }, ... ]
+// === KATEGORIEN ABRUFEN ===
 app.get('/categories', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM categories ORDER BY id ASC');
@@ -118,21 +103,10 @@ app.get('/categories', async (req, res) => {
   }
 });
 
-// === 8. SERVER STARTEN ===
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`Backend läuft auf Port ${PORT}`);
-});
-
-// === 9. HIGHSCORE SPEICHERN ===
-// FRONTEND: POST /highscores
-// Erwartet im Body: { user_id, score, mode }
-// Beispiel-Request:
-// { "user_id": 1, "score": 700, "mode": "solo" }
+// === HIGHSCORE SPEICHERN ===
 app.post('/highscores', async (req, res) => {
   const { user_id, guest_name, score, mode } = req.body;
 
-  // Prüfen, ob die erforderlichen Felder vorhanden sind
   if (!score || !mode || (!user_id && !guest_name)) {
     return res.status(400).json({ error: 'Fehlende Angaben: score, mode und entweder user_id oder guest_name' });
   }
@@ -149,9 +123,7 @@ app.post('/highscores', async (req, res) => {
   }
 });
 
-// === 10. HIGHSCORES LADEN ===
-// FRONTEND: GET /highscores
-// Gibt eine Liste zurück (Top 10), inkl. Nutzer-E-Mail und Modus
+// === HIGHSCORES ABRUFEN ===
 app.get('/highscores', async (req, res) => {
   try {
     const result = await pool.query(`
@@ -172,7 +144,7 @@ app.get('/highscores', async (req, res) => {
   }
 });
 
-// Erklärung zur Frage anhand der Frage-ID abrufen
+// === ERKLÄRUNG ZU EINER FRAGE ABRUFEN ===
 app.get('/explanation/:question_id', async (req, res) => {
   const questionId = req.params.question_id;
 
@@ -197,39 +169,31 @@ app.get('/explanation/:question_id', async (req, res) => {
   }
 });
 
-// === ROUTE: Nutzer kann neue Frage einreichen ===
-// Diese Frage wird NICHT direkt ins Quiz übernommen, sondern in die Tabelle 'submitted_questions' geschrieben
-// Sie wartet dort auf Freigabe durch einen Admin (oder euch als Projektteam)
-
+// === FRAGE EINREICHEN ===
 app.post('/submitted-questions', async (req, res) => {
-  // Hole alle notwendigen Felder aus dem Anfrage-Body
   const {
-    user_email,       // optional: falls eingeloggter Nutzer (kann auch null sein)
-    category_id,      // ID der Kategorie, z. B. 1 = Aussagenlogik, 2 = Requirements etc.
-    question,         // Die eigentliche Frage
-    option_a,         // Antwortmöglichkeit A
-    option_b,         // Antwortmöglichkeit B
-    option_c,         // Antwortmöglichkeit C
-    option_d,         // Antwortmöglichkeit D
-    correct_option,   // Richtige Antwort (nur A, B, C oder D erlaubt)
-    explanation       // Erklärung zur richtigen Antwort (optional)
+    user_email,
+    category_id,
+    question,
+    option_a,
+    option_b,
+    option_c,
+    option_d,
+    correct_option,
+    explanation
   } = req.body;
 
-  // === VALIDIERUNG ===
-  // Überprüfe, ob alle Pflichtfelder ausgefüllt sind
   if (!category_id || !question || !option_a || !option_b || !option_c || !option_d || !correct_option) {
     return res.status(400).json({ error: 'Bitte alle Pflichtfelder ausfüllen.' });
   }
 
   try {
-    // === DATENBANKEINTRAG ===
-    // Speichere die eingereichte Frage in der Tabelle submitted_questions
     await pool.query(
       `INSERT INTO submitted_questions 
        (user_email, category_id, question, option_a, option_b, option_c, option_d, correct_option, explanation)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
       [
-        user_email || null,        // falls leer, NULL speichern
+        user_email || null,
         category_id,
         question,
         option_a,
@@ -237,21 +201,19 @@ app.post('/submitted-questions', async (req, res) => {
         option_c,
         option_d,
         correct_option,
-        explanation || null        // falls leer, NULL speichern
+        explanation || null
       ]
     );
 
-    // === ERFOLGSNACHRICHT ===
     res.status(201).json({ message: 'Frage wurde eingereicht und wartet auf Prüfung.' });
 
   } catch (err) {
-    // === FEHLERBEHANDLUNG ===
     console.error('Fehler beim Speichern der Einreichung:', err);
     res.status(500).json({ error: 'Serverfehler beim Einreichen der Frage' });
   }
 });
 
-// === Admin: Alle eingereichten Fragen anzeigen ===
+// === EINREICHUNGEN ABRUFEN (für Admin) ===
 app.get('/submitted-questions', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM submitted_questions WHERE reviewed = FALSE ORDER BY submitted_at DESC');
@@ -262,12 +224,11 @@ app.get('/submitted-questions', async (req, res) => {
   }
 });
 
-// === Admin: Frage genehmigen und in questions verschieben ===
+// === FRAGE GENEHMIGEN UND ÜBERNEHMEN (Admin) ===
 app.post('/approve-question/:id', async (req, res) => {
   const questionId = req.params.id;
 
   try {
-    // 1. Hole die Frage
     const result = await pool.query('SELECT * FROM submitted_questions WHERE id = $1', [questionId]);
     const question = result.rows[0];
 
@@ -275,7 +236,6 @@ app.post('/approve-question/:id', async (req, res) => {
       return res.status(404).json({ error: 'Einreichung nicht gefunden' });
     }
 
-    // 2. In questions-Tabelle einfügen
     await pool.query(
       `INSERT INTO questions (category_id, question, option_a, option_b, option_c, option_d, correct_option, explanation)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
@@ -291,7 +251,6 @@ app.post('/approve-question/:id', async (req, res) => {
       ]
     );
 
-    // 3. Markiere als "reviewed" oder lösche
     await pool.query('UPDATE submitted_questions SET reviewed = TRUE WHERE id = $1', [questionId]);
 
     res.json({ message: 'Frage genehmigt und übernommen' });
@@ -301,7 +260,7 @@ app.post('/approve-question/:id', async (req, res) => {
   }
 });
 
-// === Admin: Einreichung löschen (z. B. unpassend oder Spam) ===
+// === EINREICHUNG LÖSCHEN (Admin) ===
 app.delete('/delete-submitted/:id', async (req, res) => {
   const questionId = req.params.id;
 
@@ -312,4 +271,10 @@ app.delete('/delete-submitted/:id', async (req, res) => {
     console.error('Fehler beim Löschen:', err);
     res.status(500).json({ error: 'Serverfehler beim Löschen der Einreichung' });
   }
+});
+
+// === SERVER STARTEN ===
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => {
+  console.log(`Backend läuft auf Port ${PORT}`);
 });
