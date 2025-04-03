@@ -250,3 +250,66 @@ app.post('/submitted-questions', async (req, res) => {
     res.status(500).json({ error: 'Serverfehler beim Einreichen der Frage' });
   }
 });
+
+// === Admin: Alle eingereichten Fragen anzeigen ===
+app.get('/submitted-questions', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM submitted_questions WHERE reviewed = FALSE ORDER BY submitted_at DESC');
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Fehler beim Laden eingereichter Fragen:', err);
+    res.status(500).json({ error: 'Serverfehler beim Abrufen der Einreichungen' });
+  }
+});
+
+// === Admin: Frage genehmigen und in questions verschieben ===
+app.post('/approve-question/:id', async (req, res) => {
+  const questionId = req.params.id;
+
+  try {
+    // 1. Hole die Frage
+    const result = await pool.query('SELECT * FROM submitted_questions WHERE id = $1', [questionId]);
+    const question = result.rows[0];
+
+    if (!question) {
+      return res.status(404).json({ error: 'Einreichung nicht gefunden' });
+    }
+
+    // 2. In questions-Tabelle einfügen
+    await pool.query(
+      `INSERT INTO questions (category_id, question, option_a, option_b, option_c, option_d, correct_option, explanation)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        question.category_id,
+        question.question,
+        question.option_a,
+        question.option_b,
+        question.option_c,
+        question.option_d,
+        question.correct_option,
+        question.explanation
+      ]
+    );
+
+    // 3. Markiere als "reviewed" oder lösche
+    await pool.query('UPDATE submitted_questions SET reviewed = TRUE WHERE id = $1', [questionId]);
+
+    res.json({ message: 'Frage genehmigt und übernommen' });
+  } catch (err) {
+    console.error('Fehler bei der Freigabe:', err);
+    res.status(500).json({ error: 'Serverfehler bei der Genehmigung' });
+  }
+});
+
+// === Admin: Einreichung löschen (z. B. unpassend oder Spam) ===
+app.delete('/delete-submitted/:id', async (req, res) => {
+  const questionId = req.params.id;
+
+  try {
+    await pool.query('DELETE FROM submitted_questions WHERE id = $1', [questionId]);
+    res.json({ message: 'Einreichung gelöscht' });
+  } catch (err) {
+    console.error('Fehler beim Löschen:', err);
+    res.status(500).json({ error: 'Serverfehler beim Löschen der Einreichung' });
+  }
+});
