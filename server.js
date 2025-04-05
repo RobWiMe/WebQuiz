@@ -1,33 +1,31 @@
-// === SERVER.JS – WebQuiz Backend ===
-
-
-const session = require('express-session');
-
-app.use(session({
-  secret: process.env.ADMIN_SECRET || 'formyeyesonly',
-  resave: false,
-  saveUninitialized: false,
-}));
-
+// === GRUNDKONFIGURATION ===
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const session = require('express-session');
 const { Pool } = require('pg');
+const path = require('path');
 
-// === GRUNDKONFIGURATION ===
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: false })); // Für Form-Daten (Admin-Login)
 
-// === POSTGRESQL EINRICHTUNG ===
+app.use(session({
+  secret: process.env.ADMIN_SECRET || 'fallbackSessionSecret',
+  resave: false,
+  saveUninitialized: false,
+}));
+
+// === POSTGRES EINRICHTUNG ===
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-// === SERVER-CHECK ===
+// === TESTROUTE: BACKEND ONLINE ===
 app.get('/', (req, res) => {
   res.send('Webquiz Backend ist online');
 });
@@ -35,19 +33,18 @@ app.get('/', (req, res) => {
 // === REGISTRIERUNG ===
 app.post('/register', async (req, res) => {
   const { email, password } = req.body;
-
   try {
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashed = await bcrypt.hash(password, 10);
     const result = await pool.query(
       'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email',
-      [email, hashedPassword]
+      [email, hashed]
     );
     res.status(201).json({ user: result.rows[0] });
   } catch (err) {
-    console.error('Fehler bei Registrierung:', err);
     if (err.code === '23505') {
       res.status(400).json({ error: 'E-Mail bereits registriert' });
     } else {
+      console.error('Fehler bei Registrierung:', err);
       res.status(500).json({ error: 'Serverfehler' });
     }
   }
@@ -56,18 +53,13 @@ app.post('/register', async (req, res) => {
 // === LOGIN ===
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
-
   try {
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    if (result.rows.length === 0) {
-      return res.status(400).json({ error: 'Benutzer nicht gefunden' });
-    }
+    if (result.rows.length === 0) return res.status(400).json({ error: 'Benutzer nicht gefunden' });
 
     const user = result.rows[0];
-    const isValid = await bcrypt.compare(password, user.password_hash);
-    if (!isValid) {
-      return res.status(401).json({ error: 'Falsches Passwort' });
-    }
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Falsches Passwort' });
 
     const token = jwt.sign(
       { id: user.id, email: user.email },
@@ -77,17 +69,15 @@ app.post('/login', async (req, res) => {
 
     res.json({ token });
   } catch (err) {
-    console.error('Fehler beim Login:', err);
+    console.error('Login-Fehler:', err);
     res.status(500).json({ error: 'Serverfehler' });
   }
 });
 
-// === FRAGEN ABRUFEN (nach Kategorie) ===
+// === FRAGEN ABRUFEN ===
 app.get('/questions', async (req, res) => {
   const category = req.query.category;
-  if (!category) {
-    return res.status(400).json({ error: 'Kategorie-ID fehlt. Verwende ?category=ID' });
-  }
+  if (!category) return res.status(400).json({ error: 'Kategorie-ID fehlt (?category=ID)' });
 
   try {
     const result = await pool.query(
@@ -96,8 +86,8 @@ app.get('/questions', async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
-    console.error('Fehler beim Abrufen der Fragen:', err);
-    res.status(500).json({ error: 'Interner Serverfehler' });
+    console.error('Fragenfehler:', err);
+    res.status(500).json({ error: 'Serverfehler beim Laden der Fragen' });
   }
 });
 
@@ -107,7 +97,7 @@ app.get('/categories', async (req, res) => {
     const result = await pool.query('SELECT * FROM categories ORDER BY id ASC');
     res.json(result.rows);
   } catch (err) {
-    console.error('Fehler beim Abrufen der Kategorien:', err);
+    console.error('Kategorien-Fehler:', err);
     res.status(500).json({ error: 'Kategorien konnten nicht geladen werden' });
   }
 });
@@ -115,9 +105,8 @@ app.get('/categories', async (req, res) => {
 // === HIGHSCORE SPEICHERN ===
 app.post('/highscores', async (req, res) => {
   const { user_id, guest_name, score, mode } = req.body;
-
   if (!score || !mode || (!user_id && !guest_name)) {
-    return res.status(400).json({ error: 'Fehlende Angaben: score, mode und entweder user_id oder guest_name' });
+    return res.status(400).json({ error: 'Fehlende Angaben: score, mode, user_id/guest_name' });
   }
 
   try {
@@ -127,12 +116,12 @@ app.post('/highscores', async (req, res) => {
     );
     res.status(201).json({ message: 'Highscore gespeichert' });
   } catch (err) {
-    console.error('Fehler beim Speichern des Highscores:', err);
-    res.status(500).json({ error: 'Serverfehler beim Speichern des Highscores' });
+    console.error('Highscore-Fehler:', err);
+    res.status(500).json({ error: 'Serverfehler beim Speichern' });
   }
 });
 
-// === HIGHSCORES ABRUFEN ===
+// === HIGHSCORE ABRUFEN ===
 app.get('/highscores', async (req, res) => {
   try {
     const result = await pool.query(`
@@ -149,174 +138,131 @@ app.get('/highscores', async (req, res) => {
     res.json(result.rows);
   } catch (err) {
     console.error('Fehler beim Laden der Highscores:', err);
-    res.status(500).json({ error: 'Serverfehler beim Abrufen der Highscores' });
+    res.status(500).json({ error: 'Serverfehler beim Abrufen' });
   }
 });
 
-// === ERKLÄRUNG ZU EINER FRAGE ABRUFEN ===
+// === FRAGEN-ERKLÄRUNG LADEN ===
 app.get('/explanation/:question_id', async (req, res) => {
-  const questionId = req.params.question_id;
-
+  const id = req.params.question_id;
   try {
     const result = await pool.query(
       'SELECT explanation FROM questions WHERE id = $1',
-      [questionId]
+      [id]
     );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Frage nicht gefunden' });
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Frage nicht gefunden' });
-    }
-
-    res.json({
-      question_id: questionId,
-      explanation: result.rows[0].explanation
-    });
-
+    res.json({ question_id: id, explanation: result.rows[0].explanation });
   } catch (err) {
-    console.error('Fehler beim Abrufen der Erklärung:', err);
-    res.status(500).json({ error: 'Serverfehler beim Abrufen der Erklärung' });
+    console.error('Fehler bei Erklärung:', err);
+    res.status(500).json({ error: 'Serverfehler' });
   }
 });
 
 // === FRAGE EINREICHEN ===
 app.post('/submitted-questions', async (req, res) => {
   const {
-    user_email,
-    category_id,
-    question,
-    option_a,
-    option_b,
-    option_c,
-    option_d,
-    correct_option,
-    explanation
+    user_email, category_id, question,
+    option_a, option_b, option_c, option_d,
+    correct_option, explanation
   } = req.body;
 
   if (!category_id || !question || !option_a || !option_b || !option_c || !option_d || !correct_option) {
-    return res.status(400).json({ error: 'Bitte alle Pflichtfelder ausfüllen.' });
+    return res.status(400).json({ error: 'Pflichtfelder fehlen' });
   }
 
   try {
-    await pool.query(
-      `INSERT INTO submitted_questions 
-       (user_email, category_id, question, option_a, option_b, option_c, option_d, correct_option, explanation)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [
-        user_email || null,
-        category_id,
-        question,
-        option_a,
-        option_b,
-        option_c,
-        option_d,
-        correct_option,
-        explanation || null
-      ]
-    );
-
-    res.status(201).json({ message: 'Frage wurde eingereicht und wartet auf Prüfung.' });
-
+    await pool.query(`
+      INSERT INTO submitted_questions 
+      (user_email, category_id, question, option_a, option_b, option_c, option_d, correct_option, explanation)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    `, [
+      user_email || null,
+      category_id, question,
+      option_a, option_b, option_c, option_d,
+      correct_option,
+      explanation || null
+    ]);
+    res.status(201).json({ message: 'Frage eingereicht' });
   } catch (err) {
-    console.error('Fehler beim Speichern der Einreichung:', err);
-    res.status(500).json({ error: 'Serverfehler beim Einreichen der Frage' });
+    console.error('Einreich-Fehler:', err);
+    res.status(500).json({ error: 'Serverfehler beim Einreichen' });
   }
 });
 
-// === EINREICHUNGEN ABRUFEN (für Admin) ===
+// === ADMIN: EINREICHUNGEN LISTEN ===
 app.get('/submitted-questions', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM submitted_questions WHERE reviewed = FALSE ORDER BY submitted_at DESC');
+    const result = await pool.query(
+      'SELECT * FROM submitted_questions WHERE reviewed = FALSE ORDER BY submitted_at DESC'
+    );
     res.json(result.rows);
   } catch (err) {
-    console.error('Fehler beim Laden eingereichter Fragen:', err);
-    res.status(500).json({ error: 'Serverfehler beim Abrufen der Einreichungen' });
+    console.error('Fehler beim Abrufen eingereichter Fragen:', err);
+    res.status(500).json({ error: 'Serverfehler' });
   }
 });
 
-// === FRAGE GENEHMIGEN UND ÜBERNEHMEN (Admin) ===
+// === ADMIN: FRAGE GENEHMIGEN ===
 app.post('/approve-question/:id', async (req, res) => {
-  const questionId = req.params.id;
-
+  const id = req.params.id;
   try {
-    const result = await pool.query('SELECT * FROM submitted_questions WHERE id = $1', [questionId]);
-    const question = result.rows[0];
+    const result = await pool.query('SELECT * FROM submitted_questions WHERE id = $1', [id]);
+    const q = result.rows[0];
+    if (!q) return res.status(404).json({ error: 'Nicht gefunden' });
 
-    if (!question) {
-      return res.status(404).json({ error: 'Einreichung nicht gefunden' });
-    }
+    await pool.query(`
+      INSERT INTO questions (category_id, question, option_a, option_b, option_c, option_d, correct_option, explanation)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+    `, [
+      q.category_id, q.question,
+      q.option_a, q.option_b, q.option_c, q.option_d,
+      q.correct_option, q.explanation
+    ]);
 
-    await pool.query(
-      `INSERT INTO questions (category_id, question, option_a, option_b, option_c, option_d, correct_option, explanation)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [
-        question.category_id,
-        question.question,
-        question.option_a,
-        question.option_b,
-        question.option_c,
-        question.option_d,
-        question.correct_option,
-        question.explanation
-      ]
-    );
-
-    await pool.query('UPDATE submitted_questions SET reviewed = TRUE WHERE id = $1', [questionId]);
+    await pool.query('UPDATE submitted_questions SET reviewed = TRUE WHERE id = $1', [id]);
 
     res.json({ message: 'Frage genehmigt und übernommen' });
   } catch (err) {
-    console.error('Fehler bei der Freigabe:', err);
-    res.status(500).json({ error: 'Serverfehler bei der Genehmigung' });
+    console.error('Freigabe-Fehler:', err);
+    res.status(500).json({ error: 'Serverfehler bei Genehmigung' });
   }
 });
 
-// === EINREICHUNG LÖSCHEN (Admin) ===
+// === ADMIN: EINREICHUNG LÖSCHEN ===
 app.delete('/delete-submitted/:id', async (req, res) => {
-  const questionId = req.params.id;
-
+  const id = req.params.id;
   try {
-    await pool.query('DELETE FROM submitted_questions WHERE id = $1', [questionId]);
+    await pool.query('DELETE FROM submitted_questions WHERE id = $1', [id]);
     res.json({ message: 'Einreichung gelöscht' });
   } catch (err) {
-    console.error('Fehler beim Löschen:', err);
-    res.status(500).json({ error: 'Serverfehler beim Löschen der Einreichung' });
+    console.error('Löschfehler:', err);
+    res.status(500).json({ error: 'Serverfehler beim Löschen' });
   }
 });
 
-// === ROUTE ADMIN APPROVAL ===
-const path = require('path');
-
-app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'admin.html'));
-});
-
-const path = require('path');
-
-// Login-Seite ausliefern
+// === ADMIN LOGIN / SCHUTZ ===
 app.get('/admin-login', (req, res) => {
   res.sendFile(path.join(__dirname, 'admin-login.html'));
 });
 
-// Passwort prüfen
-app.post('/admin-login', express.urlencoded({ extended: false }), (req, res) => {
-  const password = req.body.password;
-  const correct = process.env.ADMIN_PASSWORD || 'standardadminpasswort';
+app.post('/admin-login', (req, res) => {
+  const input = req.body.password;
+  const real = process.env.ADMIN_PASSWORD || 'admin123';
 
-  if (password === correct) {
+  if (input === real) {
     req.session.admin = true;
     return res.redirect('/admin');
   }
-
   res.status(401).send('Falsches Passwort');
 });
 
-// Adminseite geschützt ausliefern
 app.get('/admin', (req, res) => {
   if (!req.session.admin) {
     return res.redirect('/admin-login');
   }
   res.sendFile(path.join(__dirname, 'admin.html'));
 });
-
 
 // === SERVER STARTEN ===
 const PORT = process.env.PORT || 4000;
