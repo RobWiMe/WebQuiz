@@ -273,6 +273,14 @@ app.delete('/delete-submitted/:id', async (req, res) => {
   }
 });
 
+// === ROUTE ADMIN APPROVAL ===
+const path = require('path');
+
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'admin.html'));
+});
+
+
 // === SERVER STARTEN ===
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {

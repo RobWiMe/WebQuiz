@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin – Quiz-Einreichungen</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; }
+    h1 { color: #333; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+    th, td { padding: 8px 12px; border: 1px solid #ccc; text-align: left; }
+    button { padding: 6px 10px; margin-right: 5px; cursor: pointer; }
+    .actions { white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <h1>Admin-Dashboard – Eingereichte Fragen</h1>
+  <table id="questionsTable">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Frage</th>
+        <th>Kategorie</th>
+        <th>Eingereicht von</th>
+        <th>Aktionen</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- Dynamische Inhalte hier -->
+    </tbody>
+  </table>
+
+  <script>
+    async function loadQuestions() {
+      const res = await fetch('/submitted-questions');
+      const questions = await res.json();
+      const tbody = document.querySelector('#questionsTable tbody');
+      tbody.innerHTML = '';
+
+      questions.forEach(q => {
+        const row = document.createElement('tr');
+
+        row.innerHTML = `
+          <td>${q.id}</td>
+          <td>${q.question}</td>
+          <td>${q.category_id}</td>
+          <td>${q.user_email || 'Gast'}</td>
+          <td class="actions">
+            <button onclick="approve(${q.id})">✔ Genehmigen</button>
+            <button onclick="del(${q.id})">✖ Löschen</button>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    async function approve(id) {
+      const confirmed = confirm(`Frage ${id} genehmigen?`);
+      if (!confirmed) return;
+      await fetch(`/approve-question/${id}`, { method: 'POST' });
+      alert(`Frage ${id} genehmigt.`);
+      loadQuestions();
+    }
+
+    async function del(id) {
+      const confirmed = confirm(`Frage ${id} wirklich löschen?`);
+      if (!confirmed) return;
+      await fetch(`/delete-submitted/${id}`, { method: 'DELETE' });
+      alert(`Frage ${id} gelöscht.`);
+      loadQuestions();
+    }
+
+    // Initial laden
+    loadQuestions();
+  </script>
+</body>
+</html>
