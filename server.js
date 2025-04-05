@@ -1,5 +1,14 @@
 // === SERVER.JS – WebQuiz Backend ===
 
+
+const session = require('express-session');
+
+app.use(session({
+  secret: process.env.ADMIN_SECRET || 'formyeyesonly',
+  resave: false,
+  saveUninitialized: false,
+}));
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -277,6 +286,34 @@ app.delete('/delete-submitted/:id', async (req, res) => {
 const path = require('path');
 
 app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'admin.html'));
+});
+
+const path = require('path');
+
+// Login-Seite ausliefern
+app.get('/admin-login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'admin-login.html'));
+});
+
+// Passwort prüfen
+app.post('/admin-login', express.urlencoded({ extended: false }), (req, res) => {
+  const password = req.body.password;
+  const correct = process.env.ADMIN_PASSWORD || 'standardadminpasswort';
+
+  if (password === correct) {
+    req.session.admin = true;
+    return res.redirect('/admin');
+  }
+
+  res.status(401).send('Falsches Passwort');
+});
+
+// Adminseite geschützt ausliefern
+app.get('/admin', (req, res) => {
+  if (!req.session.admin) {
+    return res.redirect('/admin-login');
+  }
   res.sendFile(path.join(__dirname, 'admin.html'));
 });
 
